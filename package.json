@@ -5,16 +5,22 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
+    "vercel-build": "prisma migrate deploy && prisma db seed && next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "prisma generate"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
-    "@prisma/adapter-better-sqlite3": "^7.8.0",
+    "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@speckle/viewer": "^2.31.14",
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.3",
     "next": "16.2.10",
+    "pg": "^8.22.0",
     "prisma": "^7.8.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -24,6 +30,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "dotenv": "^17.4.2",

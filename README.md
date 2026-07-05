@@ -8,8 +8,9 @@ Speckle's own UI, URLs, or login screen.
 ## How it's built
 
 - **Next.js 16** (App Router, TypeScript, Tailwind CSS v4)
-- **Prisma 7 + SQLite** for the portal's own data: client organizations, user logins, and which Speckle
-  project IDs each client is allowed to see
+- **Prisma 7 + PostgreSQL** for the portal's own data: client organizations, user logins, and which Speckle
+  project IDs each client is allowed to see (any Postgres works; Neon's free tier is used in the deploy guide
+  below)
 - **Custom session auth** (signed JWT cookie via `jose`, following Next.js's own [recommended
   pattern](https://nextjs.org/docs/app/guides/authentication)) — no third-party auth SaaS required
 - **Speckle GraphQL API** called server-side only, using a single service-account Personal Access Token
@@ -31,30 +32,47 @@ This mapping lives in the portal's own database (`ClientOrg`, `User`, `ProjectAc
 account needs access to every project you intend to expose through the portal (invite it as a collaborator
 on those projects in Speckle).
 
-## Setup
+## Environment variables
 
-1. Copy `.env.example` to `.env` and fill in:
-   - `SESSION_SECRET` — `openssl rand -base64 32`
-   - `SPECKLE_SERVER_URL` — `https://app.speckle.systems` for Speckle's hosted cloud, or your self-hosted
-     server's URL
-   - `SPECKLE_TOKEN` — a Personal Access Token for a service Speckle account
-     (`{SPECKLE_SERVER_URL}/settings/profile/tokens`) that has access to every project you'll share
-   - `ADMIN_EMAIL` / `ADMIN_PASSWORD` — credentials for the first admin login, used by the seed script
-   - `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_COMPANY_NAME`, `NEXT_PUBLIC_PRIMARY_COLOR`, `NEXT_PUBLIC_LOGO_URL`
-     — branding
-2. Install dependencies and set up the database:
-   ```bash
-   npm install
-   npx prisma migrate dev
-   npx prisma db seed
-   ```
-3. Run the dev server:
-   ```bash
-   npm run dev
-   ```
-4. Sign in at `/login` with `ADMIN_EMAIL` / `ADMIN_PASSWORD`, then go to `/admin` to create a client
-   organization, share Speckle project IDs with it (find a project ID in its Speckle URL:
-   `/projects/<id>`), and create login credentials for that client's users.
+Set these in `.env` for local development, and in your host's dashboard for production (see `.env.example`):
+
+| Variable | What it is |
+|----------|------------|
+| `DATABASE_URL` | PostgreSQL connection string. On Neon/Vercel Postgres this is generated for you. |
+| `SESSION_SECRET` | Random secret that signs login cookies. Generate with `openssl rand -base64 32`. |
+| `SPECKLE_SERVER_URL` | `https://app.speckle.systems` for Speckle's cloud, or your self-hosted server URL. |
+| `SPECKLE_TOKEN` | A Personal Access Token for a service Speckle account (`{SPECKLE_SERVER_URL}/settings/profile/tokens`) that can see every project you'll share. **Server-side only — never exposed to the browser.** |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | The first admin login, created by the seed script. |
+| `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_COMPANY_NAME`, `NEXT_PUBLIC_PRIMARY_COLOR`, `NEXT_PUBLIC_LOGO_URL` | White-label branding. |
+
+## Local development
+
+```bash
+npm install
+cp .env.example .env      # then fill in the values above (you need a Postgres URL)
+npx prisma migrate deploy # create the tables
+npx prisma db seed        # create the first admin login
+npm run dev
+```
+
+Then open http://localhost:3000, sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`, and go to `/admin` to create
+a client organization, share Speckle project IDs with it (a project ID is the `<id>` in its Speckle URL:
+`/projects/<id>`), and create login credentials for that client's users.
+
+## Deploying to Vercel
+
+1. **Create a Postgres database.** In the Vercel dashboard → Storage → create a Postgres database (or use
+   [Neon](https://neon.tech)'s free tier). Copy its connection string.
+2. **Import the repo.** Vercel → Add New → Project → import this GitHub repo. Vercel auto-detects Next.js.
+3. **Set Environment Variables** (Project → Settings → Environment Variables) — every variable from the table
+   above. Use the Postgres connection string from step 1 for `DATABASE_URL`.
+4. **Deploy.** Vercel automatically runs the `vercel-build` script, which applies database migrations, creates
+   the first admin login, and builds the app. No manual database setup needed.
+5. Visit your `*.vercel.app` URL, sign in, and you're live. Attach a custom domain later under
+   Project → Settings → Domains.
+
+> The generated Prisma client (`src/generated/prisma`) is intentionally gitignored; the `postinstall` script
+> regenerates it on every install, including on Vercel.
 
 **Note on the build tooling:** `npm run dev` / `npm run build` are pinned to `next dev --webpack` /
 `next build --webpack`. Next.js 16 defaults to Turbopack, but `@speckle/viewer`'s dependency
@@ -78,8 +96,6 @@ it fine — revisit this once upstream fixes land.
   rich-text document body, which needs confirming against your server's live schema.
 - **No self-serve client signup.** Admins create client logins by hand in `/admin`. Fine for a small number
   of clients; add invite emails / password reset if this grows.
-- **SQLite** is used for simplicity. Swap the Prisma datasource + `@prisma/adapter-*` in `src/lib/db.ts` for
-  Postgres before running this with multiple server instances.
 
 ### Why the token never reaches the browser
 
