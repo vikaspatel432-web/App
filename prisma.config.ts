@@ -2,16 +2,12 @@
 // npm install --save-dev prisma dotenv
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
+import { resolveMigrationUrl } from "./src/lib/dbUrl";
 
-// Migrations need a direct (non-pooled) connection. Accept whatever the host
-// provides: a manually-set DATABASE_URL, or the vars auto-injected by Vercel
-// Postgres / Neon (which expose both pooled and non-pooled URLs).
-const migrationUrl =
-  process.env.DATABASE_URL_UNPOOLED ??
-  process.env.POSTGRES_URL_NON_POOLING ??
-  process.env.DATABASE_URL ??
-  process.env.POSTGRES_PRISMA_URL ??
-  process.env.POSTGRES_URL;
+// Migrations need a direct (non-pooled) connection. resolveMigrationUrl accepts
+// a manually-set DATABASE_URL, the standard Vercel/Neon Postgres vars, or those
+// same vars under any custom prefix the host applied.
+const migrationUrl = resolveMigrationUrl();
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
