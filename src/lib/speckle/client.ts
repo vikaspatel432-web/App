@@ -1,11 +1,6 @@
 import "server-only";
 
 const SERVER_URL = process.env.SPECKLE_SERVER_URL ?? "https://app.speckle.systems";
-const TOKEN = process.env.SPECKLE_TOKEN;
-
-if (!TOKEN) {
-  throw new Error("SPECKLE_TOKEN environment variable is not set");
-}
 
 export class SpeckleApiError extends Error {
   constructor(
@@ -29,11 +24,16 @@ export async function speckleGraphql<T>(
   query: string,
   variables?: Record<string, unknown>,
 ): Promise<T> {
+  const token = process.env.SPECKLE_TOKEN;
+  if (!token) {
+    throw new SpeckleApiError("SPECKLE_TOKEN environment variable is not set", null);
+  }
+
   const res = await fetch(`${SERVER_URL}/graphql`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${TOKEN}`,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ query, variables }),
     cache: "no-store",
