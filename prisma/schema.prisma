@@ -1,0 +1,51 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum Role {
+  ADMIN
+  CLIENT
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         Role
+  clientOrgId  String?
+  clientOrg    ClientOrg? @relation(fields: [clientOrgId], references: [id])
+  createdAt    DateTime  @default(now())
+}
+
+model ClientOrg {
+  id            String          @id @default(cuid())
+  name          String
+  slug          String          @unique
+  logoUrl       String?
+  primaryColor  String?
+  users         User[]
+  projectAccess ProjectAccess[]
+  createdAt     DateTime        @default(now())
+}
+
+model ProjectAccess {
+  id               String    @id @default(cuid())
+  clientOrgId      String
+  clientOrg        ClientOrg @relation(fields: [clientOrgId], references: [id], onDelete: Cascade)
+  speckleProjectId String
+  label            String?
+  createdAt        DateTime  @default(now())
+
+  @@unique([clientOrgId, speckleProjectId])
+}
