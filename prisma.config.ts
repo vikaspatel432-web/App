@@ -3,6 +3,16 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+// Migrations need a direct (non-pooled) connection. Accept whatever the host
+// provides: a manually-set DATABASE_URL, or the vars auto-injected by Vercel
+// Postgres / Neon (which expose both pooled and non-pooled URLs).
+const migrationUrl =
+  process.env.DATABASE_URL_UNPOOLED ??
+  process.env.POSTGRES_URL_NON_POOLING ??
+  process.env.DATABASE_URL ??
+  process.env.POSTGRES_PRISMA_URL ??
+  process.env.POSTGRES_URL;
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
@@ -10,6 +20,6 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    url: migrationUrl,
   },
 });
