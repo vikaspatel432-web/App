@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { ViewerPanel, type StringProp, type Filtering } from "@/components/ViewerPanel";
 
 type SpeckleViewerProps = {
   /** Full Speckle model URL, e.g. `{server}/projects/{projectId}/models/{modelId}@{versionId}` */
@@ -43,6 +44,14 @@ export function SpeckleViewer({ modelUrl }: SpeckleViewerProps) {
     measure?: { enabled: boolean };
     explode?: { setExplode: (t: number) => void };
     viewModes?: { setViewMode: (m: number) => void };
+    filtering?: {
+      hideObjects: (ids: string[]) => unknown;
+      showObjects: (ids: string[]) => unknown;
+      isolateObjects: (ids: string[]) => unknown;
+      resetFilters: () => unknown;
+      setColorFilter: (prop: unknown) => unknown;
+      removeColorFilter: () => unknown;
+    };
   } | null>(null);
 
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -55,7 +64,7 @@ export function SpeckleViewer({ modelUrl }: SpeckleViewerProps) {
     viewMode: 0,
   });
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
-  const [showProps, setShowProps] = useState(true);
+  const [properties, setProperties] = useState<StringProp[]>([]);
 
   useEffect(() => {
     let disposed = false;
@@ -68,6 +77,7 @@ export function SpeckleViewer({ modelUrl }: SpeckleViewerProps) {
       setStatus("loading");
       setErrorMessage(null);
       setSelected(null);
+      setProperties([]);
 
       try {
         const SpeckleViewerModule = await import("@speckle/viewer");
@@ -81,6 +91,7 @@ export function SpeckleViewer({ modelUrl }: SpeckleViewerProps) {
           MeasurementsExtension,
           ExplodeExtension,
           ViewModes,
+          FilteringExtension,
           ViewerEvent,
           UrlHelper,
         } = SpeckleViewerModule;
@@ -113,8 +124,18 @@ export function SpeckleViewer({ modelUrl }: SpeckleViewerProps) {
         const viewModes = safe(() => viewer.createExtension(ViewModes)) as
           | { setViewMode: (m: number) => void }
           | undefined;
+        const filtering = safe(() => viewer.createExtension(FilteringExtension)) as
+          | {
+              hideObjects: (ids: string[]) => unknown;
+              showObjects: (ids: string[]) => unknown;
+              isolateObjects: (ids: string[]) => unknown;
+              resetFilters: () => unknown;
+              setColorFilter: (prop: unknown) => unknown;
+              removeColorFilter: () => unknown;
+            }
+          | undefined;
 
-        apiRef.current = { viewer, camera, section, measure, explode, viewModes };
+        apiRef.current = { viewer, camera, section, measure, explode, viewModes, filtering };
 
         // Surface object selection into the properties panel.
         if (selection) {
@@ -125,12 +146,7 @@ export function SpeckleViewer({ modelUrl }: SpeckleViewerProps) {
                   getSelectedObjects: () => Array<Record<string, unknown>>;
                 }
               ).getSelectedObjects();
-              if (objs && objs.length) {
-                setSelected(objs[0]);
-                setShowProps(true);
-              } else {
-                setSelected(null);
-              }
+              setSelected(objs && objs.length ? objs[0] : null);
             } catch {
               setSelected(null);
             }
@@ -149,6 +165,18 @@ export function SpeckleViewer({ modelUrl }: SpeckleViewerProps) {
         }
 
         if (!disposed) setStatus("ready");
+
+        // Load filterable properties for the Model/Filter panel (non-blocking).
+        try {
+          const props = await viewer.getObjectProperties();
+          if (!disposed) {
+            setProperties(
+              props.filter((p): p is StringProp => p.type === "string" && Array.isArray((p as StringProp).valueGroups)),
+            );
+          }
+        } catch (e) {
+          console.warn("Could not load object properties", e);
+        }
       } catch (err) {
         console.error("Failed to load Speckle model", err);
         if (!disposed) {
@@ -166,6 +194,24 @@ export function SpeckleViewer({ modelUrl }: SpeckleViewerProps) {
       viewerInstance?.dispose();
     };
   }, [modelUrl]);
+
+  const filtering: Filtering = useMemo(() => {
+    const call = (fn: (f: NonNullable<typeof apiRef.current>["filtering"]) => void) => {
+      try {
+        if (apiRef.current?.filtering) fn(apiRef.current.filtering);
+      } catch (e) {
+        console.warn(e);
+      }
+    };
+    return {
+      hide: (ids) => call((f) => f!.hideObjects(ids)),
+      show: (ids) => call((f) => f!.showObjects(ids)),
+      isolate: (ids) => call((f) => f!.isolateObjects(ids)),
+      reset: () => call((f) => f!.resetFilters()),
+      colorBy: (prop) => call((f) => f!.setColorFilter(prop)),
+      clearColor: () => call((f) => f!.removeColorFilter()),
+    };
+  }, []);
 
   const fitToView = useCallback(() => {
     try {
@@ -300,21 +346,8 @@ export function SpeckleViewer({ modelUrl }: SpeckleViewerProps) {
             </div>
           </div>
 
-          {/* Properties panel — left, on selection (right side holds camera controls) */}
-          {selected && showProps && (
-            <div className="absolute bottom-20 left-3 top-3 w-64 overflow-y-auto rounded-lg border border-neutral-700 bg-neutral-900/95 p-3 text-xs backdrop-blur">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="font-medium text-white">Selected object</span>
-                <button
-                  onClick={() => setShowProps(false)}
-                  className="text-neutral-500 hover:text-white"
-                >
-                  ✕
-                </button>
-              </div>
-              <PropertyList data={selected} />
-            </div>
-          )}
+          {/* Model / Filter / Selected panel — left */}
+          <ViewerPanel properties={properties} filtering={filtering} selected={selected} />
 
           {/* Tool toolbar — bottom center */}
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
@@ -382,28 +415,5 @@ function ToolbarButton({
     >
       {children}
     </button>
-  );
-}
-
-function PropertyList({ data }: { data: Record<string, unknown> }) {
-  const entries = Object.entries(data)
-    .filter(([, v]) => v !== null && typeof v !== "object")
-    .slice(0, 40);
-
-  if (entries.length === 0) {
-    return <p className="text-neutral-500">No simple properties on this object.</p>;
-  }
-
-  return (
-    <dl className="space-y-1">
-      {entries.map(([k, v]) => (
-        <div key={k} className="flex justify-between gap-2 border-b border-neutral-800 pb-1">
-          <dt className="shrink-0 text-neutral-500">{k}</dt>
-          <dd className="truncate text-right text-neutral-200" title={String(v)}>
-            {String(v)}
-          </dd>
-        </div>
-      ))}
-    </dl>
   );
 }
