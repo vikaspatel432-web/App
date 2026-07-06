@@ -2,6 +2,12 @@
 // npm install --save-dev prisma dotenv
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
+import { resolveMigrationUrl } from "./src/lib/dbUrl";
+
+// Migrations need a direct (non-pooled) connection. resolveMigrationUrl accepts
+// a manually-set DATABASE_URL, the standard Vercel/Neon Postgres vars, or those
+// same vars under any custom prefix the host applied.
+const migrationUrl = resolveMigrationUrl();
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -10,6 +16,6 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    url: migrationUrl,
   },
 });
